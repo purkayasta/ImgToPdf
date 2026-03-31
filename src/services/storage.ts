@@ -9,11 +9,8 @@ const StorageService = {
     }
   },
 
-  add<T>(key: string, value: T): void {
-    localStorage.setItem(key, JSON.stringify(value))
-  },
-
-  edit<T>(key: string, value: T): void {
+  // Single method for both create and update — localStorage.setItem is always an upsert
+  set<T>(key: string, value: T): void {
     localStorage.setItem(key, JSON.stringify(value))
   },
 

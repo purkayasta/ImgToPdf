@@ -1,2 +1,42 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Apple Glassmorphism + Refined Neon Green (#10b981 - emerald-500 based, more refined) */
+@layer utilities {
+  /* Glassmorphism: frosted glass effect */
+  .glass {
+    @apply backdrop-blur-xl bg-white/40 dark:bg-black/40;
+  }
+
+  .glass-sm {
+    @apply backdrop-blur-md bg-white/30 dark:bg-black/30;
+  }
+
+  /* Refined green - easier on eyes, professional */
+  .accent-green {
+    @apply text-emerald-600 dark:text-[#00d97e];
+  }
+
+  .accent-green-light {
+    @apply text-emerald-500 dark:text-[#10f981];
+  }
+
+  .border-accent {
+    @apply border-emerald-400 dark:border-[#00d97e];
+  }
+
+  /* Soft glow - reduced intensity for light mode readability */
+  .glow-accent {
+    @apply drop-shadow-[0_0_12px_rgba(16,217,124,0.25)] dark:drop-shadow-[0_0_12px_rgba(0,217,126,0.4)];
+  }
+
+  /* Smooth shadow for glass effect */
+  .shadow-glass {
+    @apply shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)];
+  }
+
+  /* Interactive glass hover state */
+  .hover-glass {
+    @apply hover:bg-white/60 dark:hover:bg-black/50 transition-all duration-200;
+  }
+}
