@@ -67,33 +67,6 @@ async function compressInWorker(imgEl: HTMLImageElement, targetBytes: number): P
   })
 }
 
-/**
- * Returns the jsPDF orientation and page dimensions for a given image.
- * Landscape images get landscape pages; portrait images get portrait pages.
- * This preserves the natural reading orientation without rotating anything.
- */
-function pageForImage(
-  naturalWidth: number,
-  naturalHeight: number,
-): { orientation: 'portrait' | 'landscape'; pageW: number; pageH: number } {
-  const isLandscape = naturalWidth > naturalHeight
-  return {
-    orientation: isLandscape ? 'landscape' : 'portrait',
-    pageW: isLandscape ? 842 : 595,
-    pageH: isLandscape ? 595 : 842,
-  }
-}
-
-/**
- * Fit image inside page bounds preserving aspect ratio (letterbox / pillarbox).
- * Returns draw dimensions and centered offsets.
- */
-function fitToPage(naturalWidth: number, naturalHeight: number, pageW: number, pageH: number) {
-  const scale = Math.min(pageW / naturalWidth, pageH / naturalHeight)
-  const drawW = naturalWidth * scale
-  const drawH = naturalHeight * scale
-  return { w: drawW, h: drawH, x: (pageW - drawW) / 2, y: (pageH - drawH) / 2 }
-}
 
 async function generatePdf(images: ImageFile[], sizeOption: PdfSizeOption): Promise<void> {
   // Guard: service must not rely on the UI's disabled state as the only protection
@@ -115,11 +88,13 @@ async function generatePdf(images: ImageFile[], sizeOption: PdfSizeOption): Prom
   }
 
   try {
-    // Load the first image upfront to set the initial doc orientation without
-    // needing a nullable `doc` variable that requires non-null assertions later (#11)
+    // Load the first image upfront to set the initial page dimensions
     const firstEl = await loadImage(images[0].previewUrl)
-    const { orientation: initialOrientation } = pageForImage(firstEl.naturalWidth, firstEl.naturalHeight)
-    const doc = new jsPDF({ orientation: initialOrientation, unit: 'px', format: 'a4' })
+    const doc = new jsPDF({
+      unit: 'px',
+      format: [firstEl.naturalWidth, firstEl.naturalHeight],
+      orientation: firstEl.naturalWidth > firstEl.naturalHeight ? 'landscape' : 'portrait',
+    })
 
     for (let i = 0; i < images.length; i++) {
       const image = images[i]
@@ -127,11 +102,11 @@ async function generatePdf(images: ImageFile[], sizeOption: PdfSizeOption): Prom
 
       // Reuse the already-loaded element for the first image; load fresh for the rest
       const imgEl = i === 0 ? firstEl : await loadImage(image.previewUrl)
-      const { pageW, pageH } = pageForImage(imgEl.naturalWidth, imgEl.naturalHeight)
-      const { w, h, x, y } = fitToPage(imgEl.naturalWidth, imgEl.naturalHeight, pageW, pageH)
+      const pageW = imgEl.naturalWidth
+      const pageH = imgEl.naturalHeight
 
       if (i > 0) {
-        doc.addPage([pageW, pageH])
+        doc.addPage([pageW, pageH], pageW > pageH ? 'landscape' : 'portrait')
       }
 
       if (perImageBudget !== null) {
@@ -140,10 +115,10 @@ async function generatePdf(images: ImageFile[], sizeOption: PdfSizeOption): Prom
         console.log(
           `[pdfService] "${image.name}" compressed to ${(compressed.byteLength / 1024).toFixed(1)} KB`,
         )
-        doc.addImage(compressed, 'JPEG', x, y, w, h)
+        doc.addImage(compressed, 'JPEG', 0, 0, pageW, pageH)
       } else {
         const format = FORMAT_MAP[image.file.type] ?? 'JPEG'
-        doc.addImage(imgEl, format, x, y, w, h)
+        doc.addImage(imgEl, format, 0, 0, pageW, pageH)
       }
     }
 

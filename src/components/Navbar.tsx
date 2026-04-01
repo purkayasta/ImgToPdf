@@ -1,19 +1,13 @@
 import { createEffect, createSignal } from 'solid-js'
-import StorageService from '../services/storage'
 import logo from '../assets/logo.png'
 
 type Theme = 'light' | 'dark'
 
-const THEME_KEY = 'theme'
-
 export default function Navbar() {
-  const stored = StorageService.get<Theme>(THEME_KEY)
-  const initial: Theme = stored === 'dark' ? 'dark' : 'light'
+  const [theme, setTheme] = createSignal<Theme>(
+    localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'
+  )
 
-  const [theme, setTheme] = createSignal<Theme>(initial)
-
-  // Reactively sync the `dark` class on <html> whenever theme changes.
-  // createEffect runs synchronously on first execution (no DOM mutation at module load).
   createEffect(() => {
     document.documentElement.classList.toggle('dark', theme() === 'dark')
   })
@@ -21,7 +15,7 @@ export default function Navbar() {
   const toggle = () => {
     const next: Theme = theme() === 'light' ? 'dark' : 'light'
     setTheme(next)
-    StorageService.set<Theme>(THEME_KEY, next)
+    localStorage.setItem('theme', next)
   }
 
   return (
