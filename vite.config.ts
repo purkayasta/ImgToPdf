@@ -3,7 +3,7 @@ import tailwindcss from '@tailwindcss/vite'
 import solid from 'vite-plugin-solid'
 
 export default defineConfig({
-  base: '/',
+  base: '/ImgToPdf/',
   plugins: [solid(), tailwindcss()],
   build: {
     outDir: 'dist',
