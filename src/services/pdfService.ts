@@ -2,13 +2,14 @@ import { jsPDF } from 'jspdf'
 import type { ImageFile } from '../types/image'
 import CompressWorker from '../workers/compress.worker?worker'
 
-export type PdfSizeOption = 'default' | '5mb' | '20mb'
+export type PdfSizeOption = 'default' | '2mb' | '5mb' | '20mb'
 
 // Approximate overhead jsPDF adds beyond raw image bytes (metadata, xref table, etc.)
 const PDF_OVERHEAD_BYTES = 75 * 1024 // 75 KB safety margin
 
 const SIZE_TARGET_BYTES: Record<PdfSizeOption, number | null> = {
   default: null,
+  '2mb': 2 * 1024 * 1024,
   '5mb': 5 * 1024 * 1024,
   '20mb': 20 * 1024 * 1024,
 }
@@ -68,6 +69,52 @@ async function compressInWorker(imgEl: HTMLImageElement, targetBytes: number): P
 }
 
 
+/**
+ * Build a jsPDF document from the images.
+ * When `perImageBudget` is null, images are embedded at original quality.
+ * Otherwise each image is compressed off-thread to fit within the budget.
+ */
+async function buildDoc(
+  images: ImageFile[],
+  perImageBudget: number | null,
+): Promise<jsPDF> {
+  // Load the first image upfront to set the initial page dimensions
+  const firstEl = await loadImage(images[0].previewUrl)
+  const doc = new jsPDF({
+    unit: 'px',
+    format: [firstEl.naturalWidth, firstEl.naturalHeight],
+    orientation: firstEl.naturalWidth > firstEl.naturalHeight ? 'landscape' : 'portrait',
+  })
+
+  for (let i = 0; i < images.length; i++) {
+    const image = images[i]
+    console.log(`[pdfService] processing image ${i + 1}/${images.length}: ${image.name}`)
+
+    // Reuse the already-loaded element for the first image; load fresh for the rest
+    const imgEl = i === 0 ? firstEl : await loadImage(image.previewUrl)
+    const pageW = imgEl.naturalWidth
+    const pageH = imgEl.naturalHeight
+
+    if (i > 0) {
+      doc.addPage([pageW, pageH], pageW > pageH ? 'landscape' : 'portrait')
+    }
+
+    if (perImageBudget !== null) {
+      // Compress off-thread — does not block the main/UI thread
+      const compressed = await compressInWorker(imgEl, perImageBudget)
+      console.log(
+        `[pdfService] "${image.name}" compressed to ${(compressed.byteLength / 1024).toFixed(1)} KB`,
+      )
+      doc.addImage(compressed, 'JPEG', 0, 0, pageW, pageH)
+    } else {
+      const format = FORMAT_MAP[image.file.type] ?? 'JPEG'
+      doc.addImage(imgEl, format, 0, 0, pageW, pageH)
+    }
+  }
+
+  return doc
+}
+
 async function generatePdf(images: ImageFile[], sizeOption: PdfSizeOption): Promise<void> {
   // Guard: service must not rely on the UI's disabled state as the only protection
   if (images.length === 0) throw new Error('[pdfService] no images provided')
@@ -78,47 +125,24 @@ async function generatePdf(images: ImageFile[], sizeOption: PdfSizeOption): Prom
   )
 
   const targetBytes = SIZE_TARGET_BYTES[sizeOption]
-  const perImageBudget =
-    targetBytes !== null
-      ? Math.floor((targetBytes - PDF_OVERHEAD_BYTES) / images.length)
-      : null
-
-  if (perImageBudget !== null) {
-    console.log(`[pdfService] per-image budget: ${(perImageBudget / 1024).toFixed(1)} KB`)
-  }
 
   try {
-    // Load the first image upfront to set the initial page dimensions
-    const firstEl = await loadImage(images[0].previewUrl)
-    const doc = new jsPDF({
-      unit: 'px',
-      format: [firstEl.naturalWidth, firstEl.naturalHeight],
-      orientation: firstEl.naturalWidth > firstEl.naturalHeight ? 'landscape' : 'portrait',
-    })
+    // Always build at original quality first.
+    let doc = await buildDoc(images, null)
 
-    for (let i = 0; i < images.length; i++) {
-      const image = images[i]
-      console.log(`[pdfService] processing image ${i + 1}/${images.length}: ${image.name}`)
+    if (targetBytes !== null) {
+      const originalSize = doc.output('blob').size
+      console.log(`[pdfService] original size: ${(originalSize / 1024 / 1024).toFixed(2)} MB`)
 
-      // Reuse the already-loaded element for the first image; load fresh for the rest
-      const imgEl = i === 0 ? firstEl : await loadImage(image.previewUrl)
-      const pageW = imgEl.naturalWidth
-      const pageH = imgEl.naturalHeight
-
-      if (i > 0) {
-        doc.addPage([pageW, pageH], pageW > pageH ? 'landscape' : 'portrait')
-      }
-
-      if (perImageBudget !== null) {
-        // Compress off-thread — does not block the main/UI thread
-        const compressed = await compressInWorker(imgEl, perImageBudget)
+      if (originalSize > targetBytes) {
+        // Over target — rebuild with per-image compression budget.
+        const perImageBudget = Math.floor((targetBytes - PDF_OVERHEAD_BYTES) / images.length)
         console.log(
-          `[pdfService] "${image.name}" compressed to ${(compressed.byteLength / 1024).toFixed(1)} KB`,
+          `[pdfService] over target, compressing — per-image budget: ${(perImageBudget / 1024).toFixed(1)} KB`,
         )
-        doc.addImage(compressed, 'JPEG', 0, 0, pageW, pageH)
+        doc = await buildDoc(images, perImageBudget)
       } else {
-        const format = FORMAT_MAP[image.file.type] ?? 'JPEG'
-        doc.addImage(imgEl, format, 0, 0, pageW, pageH)
+        console.log('[pdfService] already under target — skipping compression')
       }
     }
 

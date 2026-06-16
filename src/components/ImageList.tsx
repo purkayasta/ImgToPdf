@@ -1,26 +1,72 @@
-import { For } from 'solid-js'
+import { For, createSignal } from 'solid-js'
 import type { ImageFile } from '../types/image'
 
 interface ImageListProps {
   images: ImageFile[]
   onRemove: (id: string) => void
+  onReorder: (fromId: string, toId: string) => void
 }
 
 export default function ImageList(props: ImageListProps) {
+  const [draggingId, setDraggingId] = createSignal<string | null>(null)
+  const [dragOverId, setDragOverId] = createSignal<string | null>(null)
+
+  function handleDrop(targetId: string) {
+    const fromId = draggingId()
+    if (fromId) props.onReorder(fromId, targetId)
+    setDraggingId(null)
+    setDragOverId(null)
+  }
+
   return (
     <div class="w-full max-w-4xl mx-auto px-4">
       <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
         {props.images.length} image{props.images.length !== 1 ? 's' : ''} selected
+        <span class="text-gray-400 dark:text-gray-600"> · drag to reorder</span>
       </p>
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
         <For each={props.images}>
-          {(image) => (
-            <div class="relative group rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 aspect-square">
+          {(image, index) => (
+            <div
+              draggable={true}
+              onDragStart={(e) => {
+                setDraggingId(image.id)
+                e.dataTransfer!.effectAllowed = 'move'
+              }}
+              onDragEnd={() => {
+                setDraggingId(null)
+                setDragOverId(null)
+              }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                e.dataTransfer!.dropEffect = 'move'
+                if (dragOverId() !== image.id) setDragOverId(image.id)
+              }}
+              onDragLeave={() => {
+                if (dragOverId() === image.id) setDragOverId(null)
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                handleDrop(image.id)
+              }}
+              class={`relative group rounded-xl overflow-hidden border bg-gray-100 dark:bg-gray-900 aspect-square cursor-move transition-all ${
+                draggingId() === image.id
+                  ? 'opacity-40'
+                  : dragOverId() === image.id
+                    ? 'border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/50'
+                    : 'border-gray-200 dark:border-gray-800'
+              }`}
+            >
               <img
                 src={image.previewUrl}
                 alt={image.name}
-                class="w-full h-full object-cover"
+                class="w-full h-full object-cover pointer-events-none"
               />
+
+              {/* Order badge */}
+              <div class="absolute top-1.5 left-1.5 rounded-full bg-black/60 text-white text-[10px] font-semibold w-5 h-5 flex items-center justify-center pointer-events-none">
+                {index() + 1}
+              </div>
 
               {/* Hover overlay with remove button */}
               <div class="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-start justify-end p-1.5">

@@ -51,6 +51,19 @@ export default function App() {
     setImages((prev) => [...prev, ...newImageFiles]);
   }
 
+  function handleReorder(fromId: string, toId: string) {
+    if (fromId === toId) return;
+    setImages((prev) => {
+      const fromIndex = prev.findIndex((img) => img.id === fromId);
+      const toIndex = prev.findIndex((img) => img.id === toId);
+      if (fromIndex === -1 || toIndex === -1) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  }
+
   function handleRemove(id: string) {
     const target = images().find((img) => img.id === id);
     if (!target) return;
@@ -86,7 +99,7 @@ export default function App() {
         >
           <div class="flex flex-col items-center pt-8 gap-6">
             <UploadZone compact onFilesSelected={handleFilesAdded} />
-            <ImageList images={images()} onRemove={handleRemove} />
+            <ImageList images={images()} onRemove={handleRemove} onReorder={handleReorder} />
             <div class="flex flex-col sm:flex-row items-center justify-center gap-3 pb-12 px-4">
               <Button
                 label="Clear All"
@@ -115,6 +128,7 @@ export default function App() {
                 >
                   <For each={[
                     { value: 'default', label: 'Original Quality' },
+                    { value: '2mb', label: 'Max 2 MB' },
                     { value: '5mb', label: 'Max 5 MB' },
                     { value: '20mb', label: 'Max 20 MB' },
                   ] as { value: PdfSizeOption; label: string }[]}>
