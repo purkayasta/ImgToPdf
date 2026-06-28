@@ -11,11 +11,58 @@ export default function ImageList(props: ImageListProps) {
   const [draggingId, setDraggingId] = createSignal<string | null>(null)
   const [dragOverId, setDragOverId] = createSignal<string | null>(null)
 
-  function handleDrop(targetId: string) {
-    const fromId = draggingId()
-    if (fromId) props.onReorder(fromId, targetId)
-    setDraggingId(null)
-    setDragOverId(null)
+  function onPointerDown(e: PointerEvent, id: string) {
+    e.preventDefault()
+
+    // Clone before setDraggingId so the ghost captures the undimmed card
+    const source = e.currentTarget as HTMLElement
+    const rect = source.getBoundingClientRect()
+    const ghost = source.cloneNode(true) as HTMLElement
+    const offsetX = e.clientX - rect.left
+    const offsetY = e.clientY - rect.top
+
+    ghost.style.cssText = `
+      position: fixed;
+      left: ${rect.left}px;
+      top: ${rect.top}px;
+      width: ${rect.width}px;
+      height: ${rect.height}px;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.92;
+      transform: scale(1.06) rotate(2deg);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+      border-radius: 0.75rem;
+      overflow: hidden;
+      transition: transform 0.1s ease;
+    `
+    document.body.appendChild(ghost)
+
+    setDraggingId(id)
+
+    function onMove(me: PointerEvent) {
+      ghost.style.left = `${me.clientX - offsetX}px`
+      ghost.style.top = `${me.clientY - offsetY}px`
+
+      const el = document.elementFromPoint(me.clientX, me.clientY)
+      const card = el?.closest('[data-image-id]') as HTMLElement | null
+      const targetId = card?.dataset.imageId ?? null
+      if (targetId !== dragOverId()) setDragOverId(targetId)
+    }
+
+    function onUp() {
+      ghost.remove()
+      const fromId = draggingId()
+      const toId = dragOverId()
+      if (fromId && toId && fromId !== toId) props.onReorder(fromId, toId)
+      setDraggingId(null)
+      setDragOverId(null)
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+    }
+
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
   }
 
   return (
@@ -28,28 +75,9 @@ export default function ImageList(props: ImageListProps) {
         <For each={props.images}>
           {(image, index) => (
             <div
-              draggable={true}
-              onDragStart={(e) => {
-                setDraggingId(image.id)
-                e.dataTransfer!.effectAllowed = 'move'
-              }}
-              onDragEnd={() => {
-                setDraggingId(null)
-                setDragOverId(null)
-              }}
-              onDragOver={(e) => {
-                e.preventDefault()
-                e.dataTransfer!.dropEffect = 'move'
-                if (dragOverId() !== image.id) setDragOverId(image.id)
-              }}
-              onDragLeave={() => {
-                if (dragOverId() === image.id) setDragOverId(null)
-              }}
-              onDrop={(e) => {
-                e.preventDefault()
-                handleDrop(image.id)
-              }}
-              class={`relative group rounded-xl overflow-hidden border bg-gray-100 dark:bg-gray-900 aspect-square cursor-move transition-all ${
+              data-image-id={image.id}
+              onPointerDown={(e) => onPointerDown(e, image.id)}
+              class={`relative group rounded-xl overflow-hidden border bg-gray-100 dark:bg-gray-900 aspect-square cursor-grab touch-none transition-all ${
                 draggingId() === image.id
                   ? 'opacity-40'
                   : dragOverId() === image.id

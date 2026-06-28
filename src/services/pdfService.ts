@@ -125,26 +125,22 @@ async function generatePdf(images: ImageFile[], sizeOption: PdfSizeOption): Prom
   )
 
   const targetBytes = SIZE_TARGET_BYTES[sizeOption]
+  const estimated = images.reduce((s, i) => s + i.file.size, 0) + PDF_OVERHEAD_BYTES
+  const overTarget = targetBytes !== null && estimated > targetBytes
+  const perImageBudget = overTarget
+    ? Math.floor((targetBytes! - PDF_OVERHEAD_BYTES) / images.length)
+    : null
+
+  if (overTarget) {
+    console.log(
+      `[pdfService] estimated ${(estimated / 1024 / 1024).toFixed(2)} MB > target, compressing — per-image budget: ${(perImageBudget! / 1024).toFixed(1)} KB`,
+    )
+  } else if (targetBytes !== null) {
+    console.log('[pdfService] estimated under target — skipping compression')
+  }
 
   try {
-    // Always build at original quality first.
-    let doc = await buildDoc(images, null)
-
-    if (targetBytes !== null) {
-      const originalSize = doc.output('blob').size
-      console.log(`[pdfService] original size: ${(originalSize / 1024 / 1024).toFixed(2)} MB`)
-
-      if (originalSize > targetBytes) {
-        // Over target — rebuild with per-image compression budget.
-        const perImageBudget = Math.floor((targetBytes - PDF_OVERHEAD_BYTES) / images.length)
-        console.log(
-          `[pdfService] over target, compressing — per-image budget: ${(perImageBudget / 1024).toFixed(1)} KB`,
-        )
-        doc = await buildDoc(images, perImageBudget)
-      } else {
-        console.log('[pdfService] already under target — skipping compression')
-      }
-    }
+    const doc = await buildDoc(images, perImageBudget)
 
     doc.save(filename)
     console.log('[pdfService] generation complete —', filename)
