@@ -35,7 +35,7 @@ There is no lint or test script configured.
    - `images[]` — array of `ImageFile` (with file, preview URL, metadata)
    - `isGenerating` — tracks PDF generation in progress
    - `progress` — 0–100 driven during generation (see Progress Bar below)
-   - `sizeOption` — selected PDF size target ('default', '5mb', '20mb')
+   - `sizeOption` — selected quality/size target (`PdfSizeOption`: `'default'`, `'high'`, `'2mb'`, `'5mb'`); dropdown choices come from `PdfService.getSizeChoices()`
    - The size-target `<select>` and the action buttons are inlined here, not separate components.
 
 ### Components (`src/components/`)
@@ -50,14 +50,19 @@ There is no lint or test script configured.
 - **PdfService** — orchestrates PDF generation:
   - Each PDF page is sized to the source image's exact pixel dimensions (no letterboxing); orientation is derived per-page from width vs. height
   - Loads + compresses all images in parallel (`Promise.all`); jsPDF page operations run sequentially afterward
-  - When a size target is set, per-image byte budget = `(target − 75 KB overhead) / imageCount`, compressed off-thread
+  - Three modes by `sizeOption`:
+    - `'default'` — embed originals, no re-encode
+    - `'high'` — quality-driven: re-encode each image at fixed `HIGH_QUALITY` (0.85) full-res; if the result is larger than the source, embed the original instead. Not byte-capped.
+    - `'2mb'` / `'5mb'` — size-driven: whole-PDF cap in `FIXED_TARGET_BYTES`; per-image byte budget = `(target − 75 KB overhead) / imageCount`, compressed off-thread
+  - **Budget redistribution** (size-driven only): after the first parallel pass, images that landed well under their equal share free up bytes; that leftover is split among "saturated" images (≥95% of budget) and only those are re-compressed at the larger budget
   - Saves PDF with timestamp filename (`imgtopdf-YYYYMMDD-HHMMSS.pdf`)
 
 ### Web Worker
-- **compress.worker.ts** — runs image compression on background thread
-  - Uses binary search to find optimal JPEG quality within target byte budget
+- **compress.worker.ts** — runs image compression on background thread; two mutually-exclusive input modes:
+  - `{ quality }` — one re-encode at full resolution, fixed JPEG quality (used by `'high'`)
+  - `{ targetBytes }` — fit a byte budget: first probe `MIN_QUALITY` (0.5) at current size; if even that overshoots, **downscale** dimensions by `sqrt(target/size)` and retry (resolution is the bottleneck once quality floors out), down to a `MIN_DIMENSION` (100px) floor; once min quality fits, binary-search quality upward within budget
   - Draws image on OffscreenCanvas with white background (handles PNG transparency)
-  - Returns compressed JPEG as `Uint8Array`
+  - Returns compressed JPEG as `Uint8Array`; empty buffer (no fit / error) is handled by `PdfService`'s try/catch downstream
 
 ### Styles
 `src/index.css` sets global font; `src/App.css` imports Tailwind.
@@ -96,9 +101,9 @@ These are non-negotiable for any change in this repo:
 - No internal state — state lives in Solid.js signals in `App.tsx`
 
 ### Worker Communication
-- `compress.worker.ts` uses `Transferable` objects to avoid copying large pixel data
-- Binary search algorithm (10 iterations) balances quality precision with performance
-- Worker errors are caught and logged; empty buffer triggers error handling downstream
+- `compress.worker.ts` transfers the `ImageBitmap` (`postMessage(..., [bitmap])`) to avoid copying large pixel data; `bitmap.close()` releases it
+- Byte-budget mode: up to `MAX_ATTEMPTS` (6) downscale passes, each with an 8-iteration quality binary search — balances quality precision with performance
+- Worker errors are caught and logged; an empty (0-byte) buffer is posted back and triggers error handling downstream
 
 ## Solid.js Notes
 
