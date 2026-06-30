@@ -14,6 +14,7 @@ const MAX_IMAGES = 50;
 export default function App() {
   const [images, setImages] = createSignal<ImageFile[]>([]);
   const [isGenerating, setIsGenerating] = createSignal(false);
+  const [progress, setProgress] = createSignal(0);
   const [sizeOption, setSizeOption] = createSignal<PdfSizeOption>('default');
 
   onCleanup(() => {
@@ -60,6 +61,17 @@ export default function App() {
     setImages((prev) => prev.filter((img) => img.id !== id));
   }
 
+  function handleReorder(fromId: string, toId: string) {
+    setImages((prev) => {
+      const arr = [...prev];
+      const from = arr.findIndex((img) => img.id === fromId);
+      const to = arr.findIndex((img) => img.id === toId);
+      if (from === -1 || to === -1 || from === to) return prev;
+      arr.splice(to, 0, arr.splice(from, 1)[0]);
+      return arr;
+    });
+  }
+
   function handleClearAll() {
     images().forEach((img) => URL.revokeObjectURL(img.previewUrl));
     console.log('[App] all files cleared');
@@ -69,16 +81,33 @@ export default function App() {
   async function handleGenerate() {
     console.log('[App] generate PDF clicked —', images().length, 'image(s), size option:', sizeOption());
     setIsGenerating(true);
+    setProgress(0);
+
+    // Ease progress toward 90% over time; real ticks from pdfService can push it higher
+    // but we cap at 90 until generation is truly done.
+    let eased = 0;
+    const timer = setInterval(() => {
+      eased = eased + (90 - eased) * 0.04;
+      setProgress(p => Math.max(p, Math.floor(eased)));
+    }, 80);
+
     try {
-      await PdfService.generatePdf(images(), sizeOption());
+      await PdfService.generatePdf(images(), sizeOption(), (pct) => {
+        // Only allow real progress to move forward, capped at 90 until done
+        setProgress(p => Math.max(p, Math.min(pct, 90)));
+      });
+      setProgress(100);
+      await new Promise(r => setTimeout(r, 400));
     } finally {
+      clearInterval(timer);
       setIsGenerating(false);
+      setProgress(0);
     }
   }
 
   return (
     <div class="min-h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-white relative">
-      <Navbar />
+      <Navbar progress={progress()} isGenerating={isGenerating()} />
       <main>
         <Show
           when={images().length > 0}
@@ -86,7 +115,7 @@ export default function App() {
         >
           <div class="flex flex-col items-center pt-8 gap-6">
             <UploadZone compact onFilesSelected={handleFilesAdded} />
-            <ImageList images={images()} onRemove={handleRemove} />
+            <ImageList images={images()} onRemove={handleRemove} onReorder={handleReorder} />
             <div class="flex flex-col sm:flex-row items-center justify-center gap-3 pb-12 px-4">
               <Button
                 label="Clear All"
@@ -107,21 +136,13 @@ export default function App() {
                   value={sizeOption()}
                   disabled={isGenerating()}
                   onChange={(e) => setSizeOption(e.currentTarget.value as PdfSizeOption)}
-                  class={`h-[42px] w-full pl-4 pr-10 rounded-2xl glass text-sm font-medium appearance-none cursor-pointer transition-all duration-200 hover:bg-white/70 dark:hover:bg-black/60 focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-glass ${
-                    sizeOption() === 'default'
-                      ? 'border border-blue-400 dark:border-blue-400/60 accent-blue text-blue-600 dark:text-blue-400 hover:shadow-[0_12px_48px_rgba(59,130,246,0.15)] dark:hover:shadow-[0_12px_48px_rgba(96,165,250,0.2)] focus:ring-blue-500 dark:focus:ring-blue-400'
-                      : 'border border-emerald-300 dark:border-[#00d97e]/50 accent-green hover:shadow-[0_12px_48px_rgba(16,217,124,0.15)] dark:hover:shadow-[0_12px_48px_rgba(0,217,126,0.2)] focus:ring-emerald-500 dark:focus:ring-[#00d97e]'
-                  }`}
+                  class="h-[42px] w-full pl-4 pr-10 rounded-2xl glass text-sm font-medium appearance-none cursor-pointer transition-all duration-200 hover:bg-white/70 dark:hover:bg-black/60 focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-glass border border-blue-400 dark:border-blue-400/60 accent-blue text-blue-600 dark:text-blue-400 hover:shadow-[0_12px_48px_rgba(59,130,246,0.15)] dark:hover:shadow-[0_12px_48px_rgba(96,165,250,0.2)] focus:ring-blue-500 dark:focus:ring-blue-400"
                 >
-                  <For each={[
-                    { value: 'default', label: 'Original Quality' },
-                    { value: '5mb', label: 'Max 5 MB' },
-                    { value: '20mb', label: 'Max 20 MB' },
-                  ] as { value: PdfSizeOption; label: string }[]}>
+                  <For each={PdfService.getSizeChoices()}>
                     {(opt) => <option value={opt.value}>{opt.label}</option>}
                   </For>
                 </select>
-                <span class={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 transition-colors duration-200 ${sizeOption() === 'default' ? 'text-blue-500 dark:text-blue-400' : 'text-emerald-500 dark:text-[#00d97e]'}`}>
+                <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 transition-colors duration-200 text-blue-500 dark:text-blue-400">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="6 9 12 15 18 9" />
                   </svg>

@@ -88,7 +88,7 @@ export default function UploadZone(props: UploadZoneProps) {
         </span>
         <Show when={!props.compact}>
           <span class="text-xs text-gray-400 dark:text-gray-600">
-            PNG, JPG, WEBP, GIF, BMP — max 15 MB each
+            PNG, JPG, WEBP, GIF, BMP · up to 50 images · 15 MB each
           </span>
         </Show>
       </div>

@@ -1,9 +1,14 @@
-import { createEffect, createSignal } from 'solid-js'
+import { createEffect, createSignal, Show } from 'solid-js'
 import logo from '../assets/logo.png'
 
 type Theme = 'light' | 'dark'
 
-export default function Navbar() {
+interface NavbarProps {
+  progress?: number
+  isGenerating?: boolean
+}
+
+export default function Navbar(props: NavbarProps) {
   const [theme, setTheme] = createSignal<Theme>(
     localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'
   )
@@ -19,7 +24,7 @@ export default function Navbar() {
   }
 
   return (
-    <nav class="flex items-center justify-between px-6 py-3 glass border-b border-gray-200 dark:border-gray-700/20 shadow-glass sticky top-0 z-50">
+    <nav class="relative flex items-center justify-between px-6 py-3 glass border-b border-gray-200 dark:border-gray-700/20 shadow-glass sticky top-0 z-50">
       <div class="flex items-center gap-2">
         <img src={logo} alt="ImgToPdf logo" class="h-7 w-7 object-contain" />
         <span class="text-lg font-semibold text-gray-900 dark:text-white">Image to Pdf</span>
@@ -57,6 +62,18 @@ export default function Navbar() {
           Dark
         </span>
       </button>
+      <Show when={props.isGenerating}>
+        <div class="absolute bottom-[-2px] left-0 right-0 h-[4px]">
+          <div
+            class="h-full bg-[#00d97e] transition-all duration-200 will-change-[width]"
+            style={{
+              width: `${props.progress ?? 0}%`,
+              background: '#facc15',
+              'box-shadow': '0 0 12px 4px #facc15, 0 0 24px 8px rgba(250,204,21,0.5)',
+            }}
+          />
+        </div>
+      </Show>
     </nav>
   )
 }
