@@ -14,6 +14,7 @@ const MAX_IMAGES = 50;
 export default function App() {
   const [images, setImages] = createSignal<ImageFile[]>([]);
   const [isGenerating, setIsGenerating] = createSignal(false);
+  const [progress, setProgress] = createSignal(0);
   const [sizeOption, setSizeOption] = createSignal<PdfSizeOption>('default');
 
   onCleanup(() => {
@@ -80,16 +81,33 @@ export default function App() {
   async function handleGenerate() {
     console.log('[App] generate PDF clicked —', images().length, 'image(s), size option:', sizeOption());
     setIsGenerating(true);
+    setProgress(0);
+
+    // Ease progress toward 90% over time; real ticks from pdfService can push it higher
+    // but we cap at 90 until generation is truly done.
+    let eased = 0;
+    const timer = setInterval(() => {
+      eased = eased + (90 - eased) * 0.04;
+      setProgress(p => Math.max(p, Math.floor(eased)));
+    }, 80);
+
     try {
-      await PdfService.generatePdf(images(), sizeOption());
+      await PdfService.generatePdf(images(), sizeOption(), (pct) => {
+        // Only allow real progress to move forward, capped at 90 until done
+        setProgress(p => Math.max(p, Math.min(pct, 90)));
+      });
+      setProgress(100);
+      await new Promise(r => setTimeout(r, 400));
     } finally {
+      clearInterval(timer);
       setIsGenerating(false);
+      setProgress(0);
     }
   }
 
   return (
     <div class="min-h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-white relative">
-      <Navbar />
+      <Navbar progress={progress()} isGenerating={isGenerating()} />
       <main>
         <Show
           when={images().length > 0}

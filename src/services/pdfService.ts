@@ -68,7 +68,11 @@ async function compressInWorker(imgEl: HTMLImageElement, targetBytes: number): P
 }
 
 
-async function generatePdf(images: ImageFile[], sizeOption: PdfSizeOption): Promise<void> {
+async function generatePdf(
+  images: ImageFile[],
+  sizeOption: PdfSizeOption,
+  onProgress?: (pct: number) => void,
+): Promise<void> {
   // Guard: service must not rely on the UI's disabled state as the only protection
   if (images.length === 0) throw new Error('[pdfService] no images provided')
 
@@ -87,21 +91,32 @@ async function generatePdf(images: ImageFile[], sizeOption: PdfSizeOption): Prom
     console.log(`[pdfService] per-image budget: ${(perImageBudget / 1024).toFixed(1)} KB`)
   }
 
+  // Each image contributes equally across two phases (load/compress + add to PDF)
+  const total = images.length * 2
+  let done = 0
+  const tick = () => onProgress?.(Math.round((++done / total) * 100))
+
   try {
-    // Load the first image upfront to set the initial page dimensions
-    const firstEl = await loadImage(images[0].previewUrl)
+    // Load and compress all images in parallel — workers run concurrently
+    const processed = await Promise.all(images.map(async (image) => {
+      const imgEl = await loadImage(image.previewUrl)
+      const compressed = perImageBudget !== null
+        ? await compressInWorker(imgEl, perImageBudget)
+        : null
+      tick()
+      return { imgEl, compressed, fileType: image.file.type }
+    }))
+
+    const { imgEl: firstEl } = processed[0]
     const doc = new jsPDF({
       unit: 'px',
       format: [firstEl.naturalWidth, firstEl.naturalHeight],
       orientation: firstEl.naturalWidth > firstEl.naturalHeight ? 'landscape' : 'portrait',
     })
 
-    for (let i = 0; i < images.length; i++) {
-      const image = images[i]
-      console.log(`[pdfService] processing image ${i + 1}/${images.length}: ${image.name}`)
-
-      // Reuse the already-loaded element for the first image; load fresh for the rest
-      const imgEl = i === 0 ? firstEl : await loadImage(image.previewUrl)
+    // jsPDF page operations must stay sequential
+    for (let i = 0; i < processed.length; i++) {
+      const { imgEl, compressed, fileType } = processed[i]
       const pageW = imgEl.naturalWidth
       const pageH = imgEl.naturalHeight
 
@@ -109,17 +124,12 @@ async function generatePdf(images: ImageFile[], sizeOption: PdfSizeOption): Prom
         doc.addPage([pageW, pageH], pageW > pageH ? 'landscape' : 'portrait')
       }
 
-      if (perImageBudget !== null) {
-        // Compress off-thread — does not block the main/UI thread
-        const compressed = await compressInWorker(imgEl, perImageBudget)
-        console.log(
-          `[pdfService] "${image.name}" compressed to ${(compressed.byteLength / 1024).toFixed(1)} KB`,
-        )
+      if (compressed !== null) {
         doc.addImage(compressed, 'JPEG', 0, 0, pageW, pageH)
       } else {
-        const format = FORMAT_MAP[image.file.type] ?? 'JPEG'
-        doc.addImage(imgEl, format, 0, 0, pageW, pageH)
+        doc.addImage(imgEl, FORMAT_MAP[fileType] ?? 'JPEG', 0, 0, pageW, pageH)
       }
+      tick()
     }
 
     doc.save(filename)
