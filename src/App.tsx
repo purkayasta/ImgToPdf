@@ -136,21 +136,13 @@ export default function App() {
                   value={sizeOption()}
                   disabled={isGenerating()}
                   onChange={(e) => setSizeOption(e.currentTarget.value as PdfSizeOption)}
-                  class={`h-[42px] w-full pl-4 pr-10 rounded-2xl glass text-sm font-medium appearance-none cursor-pointer transition-all duration-200 hover:bg-white/70 dark:hover:bg-black/60 focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-glass ${
-                    sizeOption() === 'default'
-                      ? 'border border-blue-400 dark:border-blue-400/60 accent-blue text-blue-600 dark:text-blue-400 hover:shadow-[0_12px_48px_rgba(59,130,246,0.15)] dark:hover:shadow-[0_12px_48px_rgba(96,165,250,0.2)] focus:ring-blue-500 dark:focus:ring-blue-400'
-                      : 'border border-emerald-300 dark:border-[#00d97e]/50 accent-green hover:shadow-[0_12px_48px_rgba(16,217,124,0.15)] dark:hover:shadow-[0_12px_48px_rgba(0,217,126,0.2)] focus:ring-emerald-500 dark:focus:ring-[#00d97e]'
-                  }`}
+                  class="h-[42px] w-full pl-4 pr-10 rounded-2xl glass text-sm font-medium appearance-none cursor-pointer transition-all duration-200 hover:bg-white/70 dark:hover:bg-black/60 focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-glass border border-blue-400 dark:border-blue-400/60 accent-blue text-blue-600 dark:text-blue-400 hover:shadow-[0_12px_48px_rgba(59,130,246,0.15)] dark:hover:shadow-[0_12px_48px_rgba(96,165,250,0.2)] focus:ring-blue-500 dark:focus:ring-blue-400"
                 >
-                  <For each={[
-                    { value: 'default', label: 'Original Quality' },
-                    { value: '5mb', label: 'Max 5 MB' },
-                    { value: '20mb', label: 'Max 20 MB' },
-                  ] as { value: PdfSizeOption; label: string }[]}>
+                  <For each={PdfService.getSizeChoices()}>
                     {(opt) => <option value={opt.value}>{opt.label}</option>}
                   </For>
                 </select>
-                <span class={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 transition-colors duration-200 ${sizeOption() === 'default' ? 'text-blue-500 dark:text-blue-400' : 'text-emerald-500 dark:text-[#00d97e]'}`}>
+                <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 transition-colors duration-200 text-blue-500 dark:text-blue-400">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="6 9 12 15 18 9" />
                   </svg>
