@@ -60,6 +60,17 @@ export default function App() {
     setImages((prev) => prev.filter((img) => img.id !== id));
   }
 
+  function handleReorder(fromId: string, toId: string) {
+    setImages((prev) => {
+      const arr = [...prev];
+      const from = arr.findIndex((img) => img.id === fromId);
+      const to = arr.findIndex((img) => img.id === toId);
+      if (from === -1 || to === -1 || from === to) return prev;
+      arr.splice(to, 0, arr.splice(from, 1)[0]);
+      return arr;
+    });
+  }
+
   function handleClearAll() {
     images().forEach((img) => URL.revokeObjectURL(img.previewUrl));
     console.log('[App] all files cleared');
@@ -86,7 +97,7 @@ export default function App() {
         >
           <div class="flex flex-col items-center pt-8 gap-6">
             <UploadZone compact onFilesSelected={handleFilesAdded} />
-            <ImageList images={images()} onRemove={handleRemove} />
+            <ImageList images={images()} onRemove={handleRemove} onReorder={handleReorder} />
             <div class="flex flex-col sm:flex-row items-center justify-center gap-3 pb-12 px-4">
               <Button
                 label="Clear All"
