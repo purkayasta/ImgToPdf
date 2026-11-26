@@ -1,42 +1,46 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Apple Glassmorphism + Refined Neon Green (#10b981 - emerald-500 based, more refined) */
-@layer utilities {
-  /* Glassmorphism: frosted glass effect */
-  .glass {
-    @apply backdrop-blur-xl bg-white/40 dark:bg-black/40;
-  }
+@layer base {
+  :root { color-scheme: light; --focus: #047857; }
+  :root.dark { color-scheme: dark; --focus: #6ee7b7; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  ::selection { background: #a7f3d0; color: #064e3b; }
+  button, select { -webkit-tap-highlight-color: transparent; }
+  button:not(:disabled), select:not(:disabled) { cursor: pointer; }
+  button:disabled, select:disabled { cursor: not-allowed; }
+}
 
-  .glass-sm {
-    @apply backdrop-blur-md bg-white/30 dark:bg-black/30;
+@layer components {
+  .control {
+    @apply min-h-11 px-4 py-2 rounded-xl inline-flex justify-center items-center gap-2 font-medium text-sm border transition-colors disabled:opacity-60;
   }
+  .control-primary {
+    @apply bg-emerald-800 border-emerald-800 text-white hover:bg-emerald-900 disabled:hover:bg-emerald-800 dark:bg-emerald-300 dark:border-emerald-300 dark:text-emerald-950 dark:hover:bg-emerald-200;
+  }
+  .control-secondary {
+    @apply border-gray-300 bg-white text-gray-800 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800;
+  }
+  .icon-control {
+    @apply w-11 h-11 shrink-0 flex items-center justify-center rounded-lg text-gray-700 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800;
+  }
+  .upload-zone {
+    @apply w-full rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-3 text-gray-800 hover:border-emerald-700 hover:bg-emerald-50 disabled:opacity-60 disabled:hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800;
+  }
+  .upload-zone-active { @apply border-emerald-700 bg-emerald-50 dark:border-emerald-300 dark:bg-emerald-950; }
+  .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr)); gap: 1rem; }
+  .image-card { @apply relative min-w-0 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900; }
+  .image-preview { @apply relative block w-full aspect-[4/3] p-3 rounded-t-xl bg-gray-100 dark:bg-gray-800; }
+  .page-number { @apply absolute left-2 top-2 min-w-7 h-7 px-2 flex items-center justify-center rounded-md bg-white text-gray-900 text-xs font-semibold border border-gray-300; }
+  .generation-toolbar {
+    @apply sticky bottom-0 z-20 flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-4 bg-white dark:bg-gray-950 py-4 border-t border-gray-200 dark:border-gray-700;
+  }
+  .message-error { @apply p-4 rounded-xl border border-red-300 bg-red-50 text-red-900 text-sm dark:border-red-800 dark:bg-red-950 dark:text-red-100; }
+  .preview-dialog { @apply m-auto w-[min(95vw,960px)] max-h-[90dvh] rounded-xl bg-white text-gray-950 dark:bg-gray-900 dark:text-white; }
+  .preview-dialog::backdrop { background: rgb(0 0 0 / 65%); }
+}
 
-  /* Refined green - easier on eyes, professional */
-  .accent-green {
-    @apply text-emerald-600 dark:text-[#00d97e];
-  }
-
-  .accent-green-light {
-    @apply text-emerald-500 dark:text-[#10f981];
-  }
-
-  .border-accent {
-    @apply border-emerald-400 dark:border-[#00d97e];
-  }
-
-  /* Soft glow - reduced intensity for light mode readability */
-  .glow-accent {
-    @apply drop-shadow-[0_0_12px_rgba(16,217,124,0.25)] dark:drop-shadow-[0_0_12px_rgba(0,217,126,0.4)];
-  }
-
-  /* Smooth shadow for glass effect */
-  .shadow-glass {
-    @apply shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)];
-  }
-
-  /* Interactive glass hover state */
-  .hover-glass {
-    @apply hover:bg-white/60 dark:hover:bg-black/50 transition-all duration-200;
-  }
+@media (prefers-reduced-motion: reduce) {
+  .control, .icon-control { transition: none; }
+  .animate-spin { animation: none; }
 }

@@ -1,114 +1,49 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Contributor context for Claude Code. See also `AGENTS.md` for repository conventions.
 
 ## Commands
 
+Use Node.js 22.18 or newer.
+
 ```bash
-npm install       # Install dependencies
-npm run dev       # Start dev server at http://localhost:5173
-npm run build     # Type-check (tsc -b) then build to dist/
-npm run preview   # Preview production build locally
-npm run deploy    # Build then publish dist/ to GitHub Pages (gh-pages)
+npm ci                    # Install locked dependencies
+npm run dev               # Local app at /ImgToPdf/ on the printed Vite URL
+npm run build             # Type-check and generate dist/
+npm run preview           # Serve the production build locally
+npm test                  # Node regression tests for PDF geometry, validation, and compression
+npx playwright install chromium # One-time browser setup
+npm run test:e2e           # Production browser tests for desktop and mobile viewports
+npm run deploy            # Build and publish dist/ to GitHub Pages
 ```
 
-There is no lint or test script configured.
+There is no lint script. `PLAYWRIGHT_CHROMIUM_CHANNEL=chrome npm run test:e2e` uses an installed Chrome instead of Playwright's Chromium. Deployment requires GitHub authentication and a public/noreply commit identity; use `npm run deploy -- --user 'Name <noreply-address>'` when the default Git email is private.
 
-## Stack
+## Stack and Structure
 
-- **Framework:** Solid.js (not React — uses `solid-js` reactivity, JSX via `vite-plugin-solid`)
-- **Build:** Vite 8
-- **Styling:** Tailwind CSS v4 (imported via `@tailwindcss/vite` plugin, no `tailwind.config.js` needed)
-- **Language:** TypeScript (strict mode, target ES2023)
-- **PDF Generation:** jsPDF
-- **Background Tasks:** Web Workers (for image compression)
-- **Drag & Drop:** `@thisbeyond/solid-dnd` (sortable image reordering)
+- Solid.js with strict TypeScript, Vite, Tailwind CSS v4, jsPDF, and `@thisbeyond/solid-dnd`.
+- `src/App.tsx` owns image selection, validation feedback, clear undo, generation, and cancellation.
+- `src/types/pdf.ts` contains quality choices and progress types. Keep these independent of jsPDF so importing UI choices does not load the PDF bundle.
+- `src/services/imageService.ts` validates type/size, verifies images load, checks dimensions, and generates thumbnails. Inputs are limited to 50 images, 15 MB each, 40 megapixels, and 32,767 pixels per side.
+- `src/services/pdfService.ts` is dynamically imported when generation starts. It reads original File data and processes one image at a time, retaining no batch of decoded sources.
+- `src/utils/pdf.ts` provides page geometry, size targets, and timestamped filenames. Pixel dimensions are interpreted at 96 dpi and scaled proportionally to the PDF page limit.
+- `src/workers/compress.worker.ts` handles JPEG encoding on OffscreenCanvas. Quality mode uses 0.85; budget mode searches quality and reduces resolution, including narrow images. Errors are explicit messages, never empty/oversized fallback buffers.
+- Original quality uses source bytes and lossless PDF stream compression. High quality uses the original when its encoded bytes are smaller. Size modes allocate the remaining byte budget across remaining pages and verify the final Blob before downloading.
+- `src/App.css` defines shared controls, surfaces, focus treatment, and reduced-motion behavior. `src/index.css` sets the font.
 
-## Architecture
+## Interaction and Resource Handling
 
-**Image-to-PDF Converter** — converts multiple images into a single PDF with optional compression.
-
-### Entry chain
-1. `index.html` — mounts `<div id="root">`, loads Geist font
-2. `src/index.tsx` — renders `<App />` into `#root`
-3. `src/App.tsx` — state container managing:
-   - `images[]` — array of `ImageFile` (with file, preview URL, metadata)
-   - `isGenerating` — tracks PDF generation in progress
-   - `progress` — 0–100 driven during generation (see Progress Bar below)
-   - `sizeOption` — selected quality/size target (`PdfSizeOption`: `'default'`, `'high'`, `'2mb'`, `'5mb'`); dropdown choices come from `PdfService.getSizeChoices()`
-   - The size-target `<select>` and the action buttons are inlined here, not separate components.
-
-### Components (`src/components/`)
-- **UploadZone** — drag-drop or click to add images (`compact` prop shrinks it once images exist)
-- **ImageList** — sortable grid of image previews; handles drag-to-reorder and per-card remove (see below)
-- **Button** — single generic button (label/icon/variant/loading); used for both Clear All and Generate PDF
-- **Navbar** — header with title, light/dark theme toggle (persisted to `localStorage` under `theme`), and the generation progress bar
-
-### Services (`src/services/`)
-- **ImageService** — validates files (type & size), creates `ImageFile` objects
-  - Accepts: JPEG, PNG, WebP, GIF, BMP (15 MB per image, max 50 images)
-- **PdfService** — orchestrates PDF generation:
-  - Each PDF page is sized to the source image's exact pixel dimensions (no letterboxing); orientation is derived per-page from width vs. height
-  - Loads + compresses all images in parallel (`Promise.all`); jsPDF page operations run sequentially afterward
-  - Three modes by `sizeOption`:
-    - `'default'` — embed originals, no re-encode
-    - `'high'` — quality-driven: re-encode each image at fixed `HIGH_QUALITY` (0.85) full-res; if the result is larger than the source, embed the original instead. Not byte-capped.
-    - `'2mb'` / `'5mb'` — size-driven: whole-PDF cap in `FIXED_TARGET_BYTES`; per-image byte budget = `(target − 75 KB overhead) / imageCount`, compressed off-thread
-  - **Budget redistribution** (size-driven only): after the first parallel pass, images that landed well under their equal share free up bytes; that leftover is split among "saturated" images (≥95% of budget) and only those are re-compressed at the larger budget
-  - Saves PDF with timestamp filename (`imgtopdf-YYYYMMDD-HHMMSS.pdf`)
-
-### Web Worker
-- **compress.worker.ts** — runs image compression on background thread; two mutually-exclusive input modes:
-  - `{ quality }` — one re-encode at full resolution, fixed JPEG quality (used by `'high'`)
-  - `{ targetBytes }` — fit a byte budget: first probe `MIN_QUALITY` (0.5) at current size; if even that overshoots, **downscale** dimensions by `sqrt(target/size)` and retry (resolution is the bottleneck once quality floors out), down to a `MIN_DIMENSION` (100px) floor; once min quality fits, binary-search quality upward within budget
-  - Draws image on OffscreenCanvas with white background (handles PNG transparency)
-  - Returns compressed JPEG as `Uint8Array`; empty buffer (no fit / error) is handled by `PdfService`'s try/catch downstream
-
-### Styles
-`src/index.css` sets global font; `src/App.css` imports Tailwind.
-Public icon sprites in `public/icons.svg` and `public/favicon.svg`.
+- Keep uploads, removal, reordering, and quality selection disabled during generation. Cancellation uses AbortController; workers terminate on success, errors, cancellation, or timeout.
+- Image cards register their sortable ref on the card and pointer activators only on a dedicated drag handle. Keep move buttons as keyboard and single-pointer alternatives. Normal previews must allow touch scrolling.
+- Thumbnails show full page content; the native dialog opens a single original image. Revoke its URL when closed.
+- Revoke thumbnails on removal, when discarding clear undo, and on cleanup. Generation reads File objects rather than thumbnail URLs. Download Blob URLs are revoked after a short delay.
+- Progress reports actual stages and completed pages. Keep a readable status, accessible progress values, visible errors, and useful focus after list changes.
+- Theme storage is optional. Catch storage exceptions and fall back to system preference for the initial theme.
 
 ## Coding Principles
 
-These are non-negotiable for any change in this repo:
-
-1. **Performance first** — the site must stay as fast as possible, no compromise. Keep work off the main thread (Web Workers), avoid unnecessary re-renders, prefer transfers over copies for large data, and don't add dependencies or work that slow load or interaction.
-2. **Mobile first** — design and style for small screens first, then scale up with responsive breakpoints (`sm:`/`md:`/`lg:`). Touch targets and layouts must work on phones before desktop.
-3. **Maintainable code** — clear names, match existing patterns, keep state in `App.tsx` and logic in services. Readability over cleverness.
-4. **No overengineering** — minimum code that solves the problem. No speculative abstractions, config, or flexibility that wasn't asked for.
-
-## Development Patterns
-
-### Drag-to-Reorder
-- `ImageList` wraps the grid in `DragDropProvider` / `SortableProvider` from `@thisbeyond/solid-dnd`; each card calls `createSortable(id)` and applies `use:sortable`
-- The `use:sortable` directive is typed in `src/solid-dnd.d.ts` (augments `solid-js` `JSX.Directives`) — keep that file or TS errors on the directive
-- `onDragEnd` calls back into `App.handleReorder(fromId, toId)`, which splices the `images` array; state stays in `App.tsx`
-- Remove buttons inside a card call `e.stopPropagation()` on `onPointerDown` so a click doesn't start a drag
-
-### Progress Bar
-- `App.handleGenerate` runs an eased timer that creeps `progress` toward 90%, while real ticks from `PdfService`'s `onProgress` callback can push it higher (also capped at 90); it snaps to 100 only when generation finishes
-- `PdfService` reports two ticks per image (load/compress, then add-to-PDF) via `onProgress`
-- `Navbar` renders the bar from its `progress`/`isGenerating` props
-
-### Resource Cleanup
-- Blob URLs created by `URL.createObjectURL()` are revoked in `App.tsx`'s `onCleanup()`
-- Web Workers are terminated after message handling to free threads
-- This prevents memory leaks when adding/removing images or generating PDFs
-
-### Service Objects
-- Services (`ImageService`, `PdfService`) are singletons exported as plain objects
-- They contain pure functions for validation, file handling, and PDF generation
-- No internal state — state lives in Solid.js signals in `App.tsx`
-
-### Worker Communication
-- `compress.worker.ts` transfers the `ImageBitmap` (`postMessage(..., [bitmap])`) to avoid copying large pixel data; `bitmap.close()` releases it
-- Byte-budget mode: up to `MAX_ATTEMPTS` (6) downscale passes, each with an 8-iteration quality binary search — balances quality precision with performance
-- Worker errors are caught and logged; an empty (0-byte) buffer is posted back and triggers error handling downstream
-
-## Solid.js Notes
-
-Solid.js is reactive but **not React**. Key differences:
-- Components run once; reactivity uses `createSignal`, `createEffect`, `createMemo`
-- No virtual DOM — direct DOM updates
-- JSX `jsxImportSource` is `solid-js` (set in `tsconfig.app.json`)
-- Use `For`, `Show`, `Switch` control-flow components instead of `.map()` or ternaries where possible
+1. **Performance first:** bound decoded-image memory, transfer bitmaps and buffers, release resources, and keep PDF code off the initial load.
+2. **Mobile first:** maintain 44px controls, full-page previews, normal scrolling, and reachable generation controls.
+3. **Maintainable code:** keep state in Solid signals and processing in services; use `For` and `Show`, not React patterns.
+4. **No overengineering:** keep dependencies and abstractions proportional to the task.
+5. **Verify behavior:** run the build and Node tests; run browser regressions for upload, generation, ordering, or interaction changes. Tests live in `tests/`, browser artifacts are ignored.

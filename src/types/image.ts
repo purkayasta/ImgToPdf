@@ -4,4 +4,6 @@ export interface ImageFile {
   previewUrl: string
   name: string
   sizeFormatted: string
+  width: number
+  height: number
 }
